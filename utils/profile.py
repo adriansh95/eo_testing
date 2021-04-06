@@ -26,7 +26,7 @@ class profile:
     def unpack(self):
         return self.xarr, self.yarr, self.xerr, self.yerr
 
-def make_profile(x, y, xlims=(0, 100000), bin_size=500):
+def make_profile(x, y, xlims=(0, 200001), bin_size=500):
     xmin = xlims[0] 
     xmax = xlims[1] 
     bins = np.arange(xmin, xmax, bin_size)
@@ -40,6 +40,28 @@ def make_profile(x, y, xlims=(0, 100000), bin_size=500):
     yarr = means[valid]
     xarr = bin_mids[valid]
     yerr = stds[valid]/np.sqrt(counts[valid])
+    xerr = np.full(len(xarr), 0.5*bin_size)
+
+    prof = profile(xarr, yarr, xerr, yerr)
+    return prof 
+
+def xtalk_profile(x, r, xlims=(0, 200001), bin_size=500):
+    xmin = xlims[0] 
+    xmax = xlims[1] 
+    bins = np.arange(xmin, xmax, bin_size)
+    y = x * r
+
+    y_means, bin_edges, binnumber = binned_statistic(x, y, statistic='mean', bins=bins)
+    r_stds, bin_edges, binnumber = binned_statistic(x, r, statistic='std', bins=bins)
+    x_means, bin_edges, binnumber = binned_statistic(x, x, statistic='mean', bins=bins)
+    counts, bin_edges, binnumber = binned_statistic(x, y, statistic='count', bins=bins)
+
+    r_means = y_means/x_means
+    valid = np.array(counts>20)
+    bin_mids = bin_edges[1:] - (bin_size / 2)
+    yarr = r_means[valid]
+    xarr = bin_mids[valid]
+    yerr = r_stds[valid]/np.sqrt(counts[valid])
     xerr = np.full(len(xarr), 0.5*bin_size)
 
     prof = profile(xarr, yarr, xerr, yerr)
