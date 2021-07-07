@@ -2,21 +2,24 @@ import numpy as np
 import argparse
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors 
+import matplotlib.ticker as mtick
 import pickle as pkl
 import glob
 import os
 import itertools
+import math
 
 from collections import defaultdict
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 from scipy.stats import linregress
 from pathlib import Path
-from utils.defaults import all_amps 
-from utils.plot_fp import plot_fp, map_detector_to_tup
-from utils.profile import profile, make_profile, xtalk_profile
+from utils.defaults import all_amps, amp_neighbors
+from utils.BOT_9raft_detmap import detectors_map
+from utils.plotting_utils import plot_fp, map_detector_to_fp,\
+    plot_raft, map_detector_to_raft
+from utils.profile import profile, make_profile
 
-amp_pairs = list(itertools.combinations(all_amps, r=2))
 
 class xtalkDataset:
     def __init__(self, run, detector):
@@ -45,6 +48,8 @@ class xtalk_nonlinearityConfig():
 class xtalk_nonlinearityTask():
     def __init__(self, config):
         self.config = config
+        self.amp_pairs = list(itertools.combinations(all_amps, r=2))
+        self.bad_pairs = defaultdict(lambda: defaultdict(list))
 
     def find_rat_flux_data(self, run):
         fname = f'ratios_fluxes_{run}*.pkl'
@@ -65,6 +70,7 @@ class xtalk_nonlinearityTask():
             self.plot_profiles()
         if self.config.plot_focalplane:
             self.plot_focalplane()
+            self.plot_histograms()
 
     def make_datasets(self):
         for run in self.config.runs:
@@ -82,11 +88,19 @@ class xtalk_nonlinearityTask():
                     ratios = d['ratios'] #keyed by target, source
                     fluxes = d['fluxes'] #keyed by target, source
 
-                    for amp_i, amp_j in amp_pairs:
+                    for amp_i, amp_j in self.amp_pairs:
+                        
+                        if len(fluxes[amp_i][amp_j]) == 0 or len(fluxes[amp_j][amp_i]) == 0:
+                            print(f'Bad amp pair: {amp_i}, {amp_j}')
+                            bad_pair = True
+                            self.bad_pairs[run][f'det{detector}'].append((amp_i, amp_j))
+                            continue
+
                         for amp1, amp2 in [(amp_i, amp_j), (amp_j, amp_i)]:
 
                             # Get the xtalk data for amp pair
                             amp_fluxes = np.array(fluxes[amp2][amp1])
+
                             amp_ratios = np.array(ratios[amp2][amp1])
                             secondary_signals = amp_ratios * amp_fluxes
 
@@ -156,14 +170,17 @@ class xtalk_nonlinearityTask():
 
     def plot_focalplane(self):
         amps = all_amps
+        runs_str = ''
+        for run in self.config.runs:
+            runs_str += f'{run}_'
 
         summary_keys = ['xtalk_coeff', 'nonlinearity', 'diff']
 
-        plot_titles = ['Xtalk Coefficient', 'Nonlinearity (First Order)',
-                       'Amp Pair Asymmetry']
+        plot_titles = [f'{runs_str}Xtalk Coefficient', f'{runs_str}Nonlinearity (First Order)',
+                       f'{runs_str}Amp Pair Asymmetry']
 
-        figure_names = ['fp_coeff.png', 'fp_nonlinearity.png',
-                        'fp_asymmetry.png']
+        figure_names = [f'{runs_str}fp_coeff.png', f'{runs_str}fp_nonlinearity.png',
+                        f'{runs_str}fp_asymmetry.png']
 
         colorbounds = [[-1e-2, -1e-3, -1e-4, -1e-5, -5e-6, 5e-6, 1e-5, 1e-4, 1e-3, 1e-2],
                        np.concatenate((np.arange(-8e-11, 0, 1e-11), np.arange(1e-11, 9e-11, 1e-11))),
@@ -199,12 +216,18 @@ class xtalk_nonlinearityTask():
                             i = amps.index(target)
                             for source, vdict in sdict.items():
                                 j = amps.index(source)
-                                val = vdict[key]
-                                vals[i, j] = val
+                                try:
+                                    val = vdict[key]
+                                    vals[i, j] = val
+                                except KeyError:
+                                    continue
             
-                    ax_idx = map_detector_to_tup(detector)
+                    ax_idx = map_detector_to_fp(detector)
                     ax = axs[ax_idx]
+
+                    isNan = np.isnan(vals)
             
+                    ax.imshow(isNan, cmap='binary')
                     fdict[key]['im'] = ax.imshow(vals, cmap=cmap,
                                                  norm=colors.BoundaryNorm(boundaries=bounds,
                                                                           ncolors=256)) ## different norm for each plot
@@ -224,6 +247,102 @@ class xtalk_nonlinearityTask():
             print(f'Wrote {full_name}')
             plt.close()
 
+    def plot_histograms(self):
+        amps = amp_neighbors
+
+        summary_keys = ['xtalk_coeff', 'nonlinearity', 'diff']
+
+        bin_scales = [10**4, 2e10, 10**4]
+        #bin_scales = [10**4, 2e9, 10**4] ##
+
+        xlims = [[-1e-4, 4e-4], [-4e-11, 1.2e-10], [0, 2e-4]]
+        #xlims = [[0, 8e-4], [-5e-9, 0], [0, 2e-4]] ##
+
+        plot_titles = ['Xtalk Coefficient', 'Nonlinearity (First Order)',
+                       'Amp Pair Asymmetry']
+
+        figure_names = ['xtalk_coeff_hist.png', 'xtalk_nonlinearity_hist.png',
+                        'xtalk_asymmetry_hist_uncorrected.png']
+
+        fdict = defaultdict(dict)
+
+        # Loop over runs (rafts) one plot per raft
+        for run in self.config.runs:
+        
+            # Make figures for coeffs, nonlin, asymmetry data
+            for key in summary_keys:
+                fig, axs = plot_raft()
+                fdict[key]['fig'] = fig
+                fdict[key]['axs'] = axs
+
+            dataset_files = self.find_dataset_files(run)
+
+            # Loop over datasets (sensors)
+            for dataset_file in dataset_files:
+                # initialize list to hold values, overwritten with each sensor
+                for key in summary_keys:
+                    fdict[key]['vals'] = [] 
+
+                with open(dataset_file, 'rb') as f:
+                    ds = pkl.load(f)
+                    summ = ds.summary
+                    detector = ds.detector
+                    sensor = detectors_map[detector]['detectorName']
+                    ax_idx = map_detector_to_raft(detector)
+                    
+                    # Loop over neighboring amps, store coeff, nonlinearity, asymmetry data
+                    for amp_i, amp_j in amp_neighbors:
+                        try:
+                            fdict['xtalk_coeff']['vals'].append(summ[amp_i][amp_j]['xtalk_coeff'])
+                            fdict['xtalk_coeff']['vals'].append(summ[amp_j][amp_i]['xtalk_coeff'])
+                            fdict['nonlinearity']['vals'].append(summ[amp_i][amp_j]['nonlinearity'])
+                            fdict['nonlinearity']['vals'].append(summ[amp_j][amp_i]['nonlinearity'])
+                            fdict['diff']['vals'].append(summ[amp_i][amp_j]['diff'])
+                        except KeyError:
+                            continue
+
+                # plot histograms of coeff, nonlin, asymmetry data
+                for key, bin_scale, xlim in zip(summary_keys, bin_scales, xlims):
+                    axs = fdict[key]['axs']
+                    vals = fdict[key]['vals']
+                    vals = np.array(vals)
+                    use = vals[np.logical_and(vals > xlim[0], vals < xlim[1])]
+                    outliers = vals[np.logical_or(vals < xlim[0], vals > xlim[1])]
+                    outliers.sort()
+
+                    max_val= vals.max()
+                    n_outliers = len(outliers)
+
+                    bmax = math.ceil(bin_scale * max(use))/bin_scale
+                    bmin = math.floor(bin_scale * min(use))/bin_scale
+                    bstep = 1/(5*bin_scale)
+                    bins = np.arange(bmin, bmax + bstep, bstep)
+
+                    ax = axs[ax_idx]
+                    ax.hist(use, bins=bins, label=f'{n_outliers} Outliers: max = {max_val:.2e}')
+                    ax.set_xlim(xlim)
+                    ax.tick_params(labelsize=16)
+                    ax.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.2e'))
+                    ax.legend(loc = 'upper right', prop={'size': 20})
+
+            # Get raftname for plot title
+            stem = os.path.basename(dataset_files[0]).split('.')[0]
+            detnum = stem.split('_')[1][3:] 
+            raft = detectors_map[detnum]['raftName']
+
+            # Save figures
+            for key, title, fname in zip(summary_keys, plot_titles, figure_names):
+                fig = fdict[key]['fig']
+                fig.suptitle(f'{run} {raft} {title}', fontsize=20)
+                fig.tight_layout()
+                figname = f'{run}_{raft}_{fname}'
+                pathname = os.path.join(self.config.write_to, 'plots/focal_plane')
+                Path(pathname).mkdir(parents=True, exist_ok=True)
+                full_name = os.path.join(pathname, figname)
+                fig.savefig(full_name)
+                print(f'Wrote {full_name}')
+                plt.close()
+
     def plot_profiles(self):
         for run in self.config.runs:
             dataset_files = self.find_dataset_files(run)
@@ -234,17 +353,16 @@ class xtalk_nonlinearityTask():
                     run = dataset.run
                     detector = dataset.detector
 
-                    for amp_i, amp_j in amp_pairs:
+                    for amp_i, amp_j in self.amp_pairs:
+                        if (amp_i, amp_j) in self.bad_pairs[run][f'det{detector}']:
+                            continue
                         fig1 = plt.figure(figsize=(24, 16))
                         ax1 = fig1.add_axes((.1, .3, .8, .6))
                         fig2, ax3 = plt.subplots(figsize=(24, 16))
                         profiles = []
 
                         for amp1, amp2 in [(amp_i, amp_j), (amp_j, amp_i)]:
-                            source = amp1
-                            target = amp2
                             summary = dataset.summary[amp2][amp1]
-                            #norm = summary['norm']
                             norm = summary['xtalk_coeff']
                             profile = dataset.profiles[amp2][amp1]
                             profiles.append(profile)
@@ -254,13 +372,13 @@ class xtalk_nonlinearityTask():
                             self.plot_xtalk(profile, amp2, amp1, ax3, norm=norm) 
        
                         # Plot difference
-                        diff = profiles[0] - profiles[1] #1 -> 2 - 2 -> 1
                         ax2 = fig1.add_axes((.1, .1, .8, .2), sharex=ax1)
+                        diff = profiles[0] - profiles[1] #1 -> 2 - 2 -> 1
                         self.plot_diff(diff, amp_i, amp_j, ax2)
                         
                         # Add labels, grid, title, and save
                         for ax in [ax1, ax2, ax3]:
-                            ax.legend(loc='lower left', prop={'size': 12})
+                            ax.legend(loc='lower left', prop={'size': 20})
                             ax.set_xlabel('Source Amp Pixel Signal (adu)', fontsize=18.0)
                             ax.grid(b=True)
 
