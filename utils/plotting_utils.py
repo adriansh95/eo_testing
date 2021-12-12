@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from utils.BOT_9raft_detmap import detectors_map
+from eo_testing.utils.BOT_9raft_detmap import detectors_map
 
 def plot_fp():
     borderless = [(0, 0), (0, 1), (0, 2), (0, 12), (0, 13), (0, 14),
@@ -21,6 +21,14 @@ def plot_fp():
                                   rotation='horizontal', ha='right')
     
     return fig, axs
+
+def map_detName_to_fp(detName):
+    raft, sensor = detName.split('_')
+    ty = 3*int(raft[2]) + int(sensor[2])
+    tx = 14 - 3*int(raft[1]) - int(sensor[1])
+    tup = (tx, ty)
+
+    return tup
 
 def map_detector_to_fp(detnum):
     raft = detectors_map[detnum]['raftName']
