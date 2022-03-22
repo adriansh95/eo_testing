@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import lsst.afw.display as afwDisplay
 import os.path
 #import tracemalloc
 #import linecache
@@ -32,6 +31,9 @@ from lsst.daf.butler import Butler
 #            print("%s other: %.1f KiB" % (len(other), size / 1024))
 #        total = sum(stat.size for stat in top_stats)
 #        print("Total allocated size: %.1f KiB" % (total / 1024))
+
+#snapshots = []
+#filters = [tracemalloc.Filter(True, '*matplotlib*')]
 
 mod = 32
 maxp = 8
@@ -83,7 +85,6 @@ b = Butler(repo, collections=collections)
 reg = b.registry
 dtype = 'raw'
 
-# I've had to break the list of detectors up into two because of memory leak
 detectors = [27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 
              40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 
              53, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 
@@ -92,19 +93,21 @@ detectors = [27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
              126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 
              136, 137, 138, 139, 140, 141, 142, 143]
 
-#detectors = [97, 98, 117, 118, 119, 120, 121, 122, 123, 124, 125,
-#             126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 
-#             136, 137, 138, 139, 140, 141, 142, 143]
- 
+#tracemalloc.start(15)
+
+#fig0 for histograms, fig1 for bit probabilities
+fig0, axs0 = plt.subplots(8, 2, figsize=(28, 20))
+fig1, axs1 = plt.subplots(8, 2, figsize=(28, 20), sharex=True)
+
 # loop over detectors, make two figures for each detector
 for detector in detectors:
-    #fig0 for histograms, fig1 for bit probabilities
-    fig0, axs0 = plt.subplots(8, 2, figsize=(28, 20))
-    fig1, axs1 = plt.subplots(8, 2, figsize=(28, 20), sharex=True)
 
+    # clear axes and 
     # do default formatting of ax1 ylims, this will be overwritten if
     # a bit probility deviates from 0.5 by more than 0.05
-    for ax1 in axs1.ravel():
+    for ax0, ax1 in zip(axs0.ravel(), axs1.ravel()):
+        ax0.clear()
+        ax1.clear()
         ax1.set_ylim(0.45, 0.55)
 
     # two dictionaries of dictionaries of arrays to hold bit frequency info, keyed by exposure id, amp
@@ -219,6 +222,14 @@ for detector in detectors:
     fig1.savefig(fname1)
     print(f'Wrote {fname0}')
     print(f'Wrote {fname1}')
-    # close the figures
-    plt.close('all')
     gc.collect()
+
+#    snapshots.append(tracemalloc.take_snapshot())
+#    if len(snapshots) > 1:
+#        stats = snapshots[-1].filter_traces(filters).compare_to(snapshots[-2], 'traceback')
+#
+#        for stat in stats[:10]:                
+#            print("{} new KiB {} total KiB {} new {} total memory blocks: ".format(stat.size_diff/1024,
+#                                                                                   stat.size / 1024, stat.count_diff ,stat.count))                
+#            for line in stat.traceback.format():                    
+#                print(line)

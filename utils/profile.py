@@ -26,7 +26,7 @@ class profile:
     def unpack(self):
         return self.xarr, self.yarr, self.xerr, self.yerr
 
-def make_profile(x, y, xlims=(0, 200001), bin_size=500):
+def make_profile(x, y, xlims=(0, 200001), bin_size=500, mincounts=20):
     xmin = xlims[0] 
     xmax = xlims[1] 
     bins = np.arange(xmin, xmax, bin_size)
@@ -35,7 +35,7 @@ def make_profile(x, y, xlims=(0, 200001), bin_size=500):
     stds, bin_edges, binnumber = binned_statistic(x, y, statistic='std', bins=bins)
     counts, bin_edges, binnumber = binned_statistic(x, y, statistic='count', bins=bins)
 
-    valid = np.array(counts>20)
+    valid = np.array(counts>mincounts)
     bin_mids = bin_edges[1:] - (bin_size / 2)
     yarr = means[valid]
     xarr = bin_mids[valid]
