@@ -72,11 +72,11 @@ class adc():
 
         
 class dnl_dataset():
-    def __init__(self, detName, detType, dnl_info):#, adcs):
+    def __init__(self, detName, detType, dnl_info, adcs):
         self.detName = detName
         self.detType = detType
         self.dnl_info = dnl_info
-        #self.adcs = adcs
+        self.adcs = adcs
 
 
 class bit_dataset():
@@ -87,10 +87,9 @@ class bit_dataset():
 
 
 class adcTaskConfig():
-    def __init__(self, run, **kwargs):#write_to='/u/ec/adriansh/lsst/analysis/adc/', 
-                 #maxp=5, make_datasets=True, make_plots=True):
+    def __init__(self, run, **kwargs):
         self.run = run
-        self.write_to = kwargs.pop('write_to', '/u/ec/adriansh/lsst/analysis/adc/')
+        self.write_to = kwargs.pop('write_to', os.path.join(os.path.expanduser('~'), '/analysis/adc/'))
         self.make_datasets = kwargs.pop('make_datasets', True)
         self.make_plots = kwargs.pop('make_plots', True)
         self.make_adcs = kwargs.pop('make_adcs', False)
@@ -129,7 +128,7 @@ class adcTask():
             new_where = self.where
         else:
             detstr = ', '.join(self.config.detectors)
-            new_where = self.where + f'and detector in (detstr)'
+            new_where = self.where + f'and detector in ({detstr})'
         
         recordClasses = self.butler.registry.queryDimensionRecords('detector', where=new_where)
         det_raft_pairs = sorted([(rc.id, rc.full_name) for rc in recordClasses])
@@ -180,7 +179,7 @@ class adcTask():
 
         for amp, exp_dict in dnl_data.items():
             x = np.arange(adcmax)
-            dnl_arrays = np.zeros((len(exp_dict.keys), len(x)))
+            dnl_arrays = np.zeros((len(exp_dict.keys()), len(x)))
             weight_arrays = np.zeros(dnl_arrays.shape)
             dnl_err2_arrays = np.zeros(dnl_arrays.shape)
 
@@ -371,21 +370,28 @@ class adcTask():
                 continue
 
             dnl_measurement = counts[useable] / smoothed[useable] - 1 # this includes poisson noise on top of dnl measurement
+            n_measurements = len(dnl_measurement)
+            dnl_measurement_var = dnl_measurement.var()
             dnl_pois_err2 = count_vars[useable] / smoothed[useable]**2 # variance of dnl measurement due to poisson noise
 
             dnl_data[amp]['dnl'] = dnl_measurement
             dnl_data[amp]['dnl_err2'] = dnl_pois_err2
             dnl_data[amp]['measured_bins'] = bins[useable]
 
-            dnl_var = dnl_measurement.var() - dnl_pois_err2.mean()
+            dnl_var = dnl_measurement_var - dnl_pois_err2.mean()
             dnl_std = np.sqrt(dnl_var)
-            dnl_var_err2 = np.var(dnl_measurement - dnl_measurement.mean())/len(dnl_measurement)
-            dnl_std_err2 = 1/(4*dnl_var) * dnl_var_err2
-            dnl_std_err = np.sqrt(dnl_std_err2)
+            dnl_var_se2 = (moment(dnl_measurement, moment=4) - \
+                          (n_measurements - 3)/(n_measurements - 1) * \
+                          dnl_measurement_var**2 + dnl_pois_err2.var())/n_measurements
+
+            dnl_std_se = np.sqrt(dnl_var_se2)/(2*dnl_std)
+            #dnl_var_err2 = np.var(dnl_measurement - dnl_measurement.mean())/len(dnl_measurement)
+            #dnl_std_err2 = 1/(4*dnl_var) * dnl_var_err2
+            #dnl_std_err = np.sqrt(dnl_std_err2)
   
             amp_summary[amp]['med'] = np.median(bins[useable])
             amp_summary[amp]['dnl_std'] = dnl_std
-            amp_summary[amp]['dnl_std_err'] = dnl_std_err
+            amp_summary[amp]['dnl_std_err'] = dnl_std_se
 
         return amp_summary, dnl_data
 
@@ -439,8 +445,14 @@ class adcTask():
         maxy = 0.25
 
         for amp, ax in zip(amp_plot_order, axs.ravel()):
-            data_dict = dnl_info[amp]
             ax.cla()
+
+            try:
+                data_dict = dnl_info[amp]
+            except KeyError:
+                print(f'No Data for amp {amp}')
+                continue
+
             ylims = (0, maxy)
             meds = np.array(data_dict['med'])
             dnl_std = np.array(data_dict['dnl_std'])
@@ -673,18 +685,27 @@ def main(runs, **kwargs):
 
 
 if __name__ == "__main__":
+    default_write_to = os.path.join(os.path.expanduser('~'), 'analysis/adc/')
+
     parser = argparse.ArgumentParser(description='Analyze flat files for given runs at amplifier level')
     parser.add_argument('runs', nargs="+", help='A list of runs to analyze')
-    parser.add_argument('--write_to', default='/gpfs/slac/lsst/fs1/u/adriansh/analysis/adc/',
-                        help='Where to save the results. '
-                        'Default: \'/gpfs/slac/lsst/fs1/u/adriansh/analysis/adc/\'')
-    parser.add_argument('--make_datasets', action='store_true', help='Boolean, Default: True')
-    parser.add_argument('--make_plots', action='store_true', help='Boolean, Default: True')
-    parser.add_argument('--make_adcs', action='store_false', help='Boolean, Default: False')
+    parser.add_argument('--write_to', default=default_write_to,
+                        help='Where to save the results. '\
+                        f'Default: {default_write_to}')
+    parser.add_argument('--repo', default='/sdf/group/lsst/camera/IandT/repo_gen3/BOT_data/butler.yaml',
+                        help='Where to look for data. Default: '\
+                        '/sdf/group/lsst/camera/IandT/repo_gen3/BOT_data/butler.yaml')
+    parser.add_argument('--make_datasets', action='store_true', dest='make_datasets')
+    parser.add_argument('--no-make_datasets', action='store_false', dest='make_datasets')
+    parser.add_argument('--make_plots', action='store_true', dest='make_plots')
+    parser.add_argument('--no-make_plots', action='store_false', dest='make_plots')
+    parser.add_argument('--make_adcs', action='store_true', dest='make_adcs')
+    parser.add_argument('--no-make_adcs', action='store_false', dest='make_adcs')
     parser.add_argument('--detectors', nargs='+', default='ALL_DETECTORS', help='List of detectors. '
                         'Default: ALL_DETECTORS')
     parser.add_argument('--amps', nargs='+', default=all_amps, help=f'List of amps. '
                         "Example: ['C17', 'C10']. Default: {all_amps}")
+    parser.set_defaults(make_datasets=True, make_plots=True, make_adcs=False)
 
 
     kwargs = vars(parser.parse_args())
