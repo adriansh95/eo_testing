@@ -270,10 +270,6 @@ class adcTask():
             detType = ''
             #temp_counts = defaultdict(lambda: defaultdict(lambda: 0))
 
-            #counts_data = defaultdict(lambda: defaultdict(lambda: dict()))
-            #filtered_data = defaultdict(lambda: defaultdict(lambda: dict()))
-            #errs_data = defaultdict(lambda: defaultdict(lambda: dict()))
-
             dnl_data = {amp: {iTime: {} for iTime in range(len(expTimes))} \
                         for amp in amps_list}
             summary_data = {amp: {'med': [], 'dnl_std': [], 'dnl_std_err': []} for amp in amps_list}
@@ -323,11 +319,6 @@ class adcTask():
 
                 for amp, data_dict in amp_summary.items():
                     dnl_data[amp][i] = temp_dnl_data[amp]
-
-                    #for adcbin, ddict in temp_adc_amp_data.items(): ##
-                    #    counts_data[amp][i][adcbin] = ddict['observed'] ##
-                    #    filtered_data[amp][i][adcbin] = ddict['expected'] ##
-                    #    errs_data[amp][i][adcbin] = ddict['error'] ##
 
                     if data_dict is not None:
                         summary_data[amp]['med'].append(data_dict['med'])
