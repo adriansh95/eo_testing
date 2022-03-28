@@ -181,21 +181,16 @@ class adcTask():
             x = np.arange(adcmax)
             dnl_arrays = np.zeros((len(exp_dict.keys()), len(x)))
             weight_arrays = np.zeros(dnl_arrays.shape)
-            dnl_err2_arrays = np.zeros(dnl_arrays.shape)
 
             for iexp, dnl_dict in exp_dict.items():
-                dnl = 0 * x
-                weights = 0 * x
-                dnl_err2 = 0 * x
+                dnl = np.zeros(adcmax)
+                weights = np.zeros(adcmax)
                 measured_bins = dnl_dict['measured_bins']
                 dnl[measured_bins] = dnl_dict['dnl']
-                dnl_err2[measured_bins] = dnl_dict['dnl_err2']
                 weights[measured_bins] = 1/dnl_dict['dnl_err2']
 
                 dnl_arrays[iexp] = dnl
                 weight_arrays[iexp] = weights
-                dnl_err2_arrays[iexp] = dnl_err2 
-
 
             dw = dnl_arrays * weight_arrays
 
