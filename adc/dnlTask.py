@@ -60,15 +60,15 @@ class adc():
         self.edges = adc_edges
         self.edge_unc = edge_unc
 
-    def update(self, new_dnl, new_dnl_err, new_bins):
-        adcmax = 2**18
-        x = np.arange(adcmax)
-        old_dnl = 0 * x
-        old_weights = 0 * x
+    #def update(self, new_dnl, new_dnl_err, new_bins):
+    #    adcmax = 2**18
+    #    x = np.arange(adcmax)
+    #    old_dnl = np.zeros(adcmax)
+    #    old_weights = np.zeros(adcmax)
 
-        old_bins = self.measured_bins
-        old_dnl[old_bins] = self.dnl
-        old_weighst[old_bins] = 1/self.dnl_err**2
+    #    old_bins = self.measured_bins
+    #    old_dnl[old_bins] = self.dnl
+    #    old_weights[old_bins] = 1/self.dnl_err**2
 
         
 class dnl_dataset():
@@ -355,6 +355,7 @@ class adcTask():
                 amp_summary[amp] = None
                 continue
 
+            smoothed *= (counts.sum() / smoothed.sum())
             dnl_measurement = counts[useable] / smoothed[useable] - 1 # this includes poisson noise on top of dnl measurement
             n_measurements = len(dnl_measurement)
             dnl_measurement_var = dnl_measurement.var()
