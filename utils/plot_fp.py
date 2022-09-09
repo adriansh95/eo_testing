@@ -16,8 +16,8 @@ def plot_fp():
     
     
     for i in range(5):
-        axs[-1, 1+3*i].set_xlabel(f'RX{i}', fontsize='x-large')
-        axs[-2-3*i, 0].set_ylabel(f'R{i}X', fontsize='x-large',
+        axs[-1, 1+3*i].set_xlabel(f'RX{i}', fontsize=28)
+        axs[-2-3*i, 0].set_ylabel(f'R{i}X', fontsize=28,
                                   rotation='horizontal', ha='right')
     
     return fig, axs

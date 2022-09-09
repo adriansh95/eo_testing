@@ -24,18 +24,20 @@ def plot_fp():
 
 def map_detName_to_fp(detName):
     raft, sensor = detName.split('_')
-    ty = 3*int(raft[2]) + int(sensor[2])
-    tx = 14 - 3*int(raft[1]) - int(sensor[1])
-    tup = (tx, ty)
+    try:
+        ty = 3*int(raft[2]) + int(sensor[2])
+        tx = 14 - 3*int(raft[1]) - int(sensor[1])
+        tup = (tx, ty)
+    except ValueError:
+        tup = 0
 
     return tup
 
 def map_detector_to_fp(detnum):
     raft = detectors_map[detnum]['raftName']
     sensor = detectors_map[detnum]['detectorName']
-    ty = 3*int(raft[2]) + int(sensor[2])
-    tx = 14 - 3*int(raft[1]) - int(sensor[1])
-    tup = (tx, ty)
+    detName = '_'.join([raft, sensor])
+    tup = map_detName_to_fp(detName)
 
     return tup
 
