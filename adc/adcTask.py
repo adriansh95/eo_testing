@@ -56,10 +56,6 @@ class adc():
             adc_edges[xvals] = temp_edges
             edge_unc[xvals] = temp_unc
 
-        edge_cond = np.isfinite(adc_edges)
-        adc_edges = adc_edges[edge_cond]
-        edge_unc = edge_unc[edge_cond]
-
         self.edges = adc_edges
         self.edge_unc = edge_unc
 
