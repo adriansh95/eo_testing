@@ -128,19 +128,12 @@ class adcTaskConfig():
         self.min_counts = 150
         self.plot_loc = os.path.join(self.write_to, f'plots/{ds_type}')
         self.instrument = kwargs.pop('instrument', 'LSSTCam')
-        self.observation_type = kwargs.pop('observation_type', ['dark'])
+        self.observation_types = kwargs.pop('observation_types', ['dark'])
 
 
 class adcTask():
     def __init__(self, config):
         self.config = config
-        obs_type_str = "', '".join(self.config.observation_type)
-
-        self.where = f"""
-        instrument = '{self.config.instrument}'
-        and exposure.observation_type in ('{obs_type_str}') 
-        """
-        
         self.collections = 'LSSTCam/raw/all'
         self.butler = Butler(self.config.repo, collections=self.collections)
 
@@ -265,11 +258,17 @@ class adcTask():
         return probs
 
     def make_datasets(self):
-        for run in self.config.runs:
-            where = self.where + f"and exposure.science_program = '{run}'"
-            det_raft_pairs = self.get_det_raft_pairs(where)
+        base_where = f"""
+        instrument='{self.config.instrument}'
+        """
 
+        obs_type_str = "', '".join(self.config.observation_types)
+
+        for run in self.config.runs:
+            det_raft_pairs = self.get_det_raft_pairs(base_where)
             amps_list = self.config.amps
+            where = base_where + f"""and exposure.science_program='{run}'
+            and exposure.observation_type in ('{obs_type_str}')"""
 
             for detector, detName in det_raft_pairs:
                 # Skip Corner rafts
