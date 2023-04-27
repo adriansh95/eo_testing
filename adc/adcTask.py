@@ -99,19 +99,11 @@ class adc_dataset():
             self.adcs = adcs
 
 
-class bit_dataset():
-    def __init__(self, detName, detType, bit_data):
-        self.detName = detName
-        self.detType = detType
-        self.bit_data = bit_data
-
-
 class adcTaskConfig():
     def __init__(self, runs, **kwargs):
-        ds_type = kwargs.pop('ds_type', 'dnl')
+        write_to = kwargs.pop('write_to', os.path.join(os.path.expanduser('~'), '/analysis/adc/'))
 
         self.runs = runs
-        self.write_to = kwargs.pop('write_to', os.path.join(os.path.expanduser('~'), '/analysis/adc/'))
         self.overwrite_datasets = kwargs.pop('overwrite_datasets', False)
         self.make_datasets = kwargs.pop('make_datasets', True)
         self.make_plots = kwargs.pop('make_plots', True)
@@ -119,14 +111,8 @@ class adcTaskConfig():
         self.detectors = kwargs.pop('detectors', 'ALL_DETECTORS')
         self.repo = kwargs.pop('repo', '/sdf/group/rubin/repo/ir2/butler.yaml')
         self.amps = kwargs.pop('amps', all_amps)
-        self.maxp = 5
-        self.adcmax = 2**18
-        self.colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:pink']
-        self.markers = ['.', 'v', '^', '+', 'x']
-        self.ds_type = ds_type
-        self.dataset_loc = os.path.join(self.write_to, f'datasets/{ds_type}')
-        self.min_counts = 150
-        self.plot_loc = os.path.join(self.write_to, f'plots/{ds_type}')
+        self.dataset_loc = os.path.join(self.write_to, 'datasets/dnl')
+        self.plot_loc = os.path.join(self.write_to, f'plots/dnl')
         self.instrument = kwargs.pop('instrument', 'LSSTCam')
         self.observation_type = kwargs.pop('observation_type', ['dark'])
 
@@ -152,7 +138,7 @@ class adcTask():
 
     def get_datasets(self, run):
         globstring = os.path.join(self.config.dataset_loc, 
-                                  f'{run}*{self.config.ds_type}_dataset.pkl')
+                                  f'{run}*dnl_dataset.pkl')
         dataset_files = glob.glob(globstring)
 
         return dataset_files
@@ -163,29 +149,8 @@ class adcTask():
         
         return expTimes
 
-    def compute_probs(self, x, y, windows): ##
-        min_useable = 7500
-        w = windows[1] - windows[0]
-        bit_counts = [y * ((x & bp) // bp) for bp in np.power(2, range(5))]
-
-        bit_sums, tempedges, n = binned_statistic(x, bit_counts, statistic='sum', bins=windows)
-        tot_sums, tempedges, n = binned_statistic(x, y, statistic='sum', bins=windows)
-
-        useable = tot_sums > min_useable
-        tot_sums = tot_sums[useable]
-        probs = np.zeros((len(bit_sums), len(useable)))
-
-        probs = np.array([bit_sum[useable]/tot_sums for bit_sum in bit_sums])
-
-        tempedges = tempedges[:-1][useable]
-        mids = tempedges + w/2
-        prob_errs = np.sqrt((probs * (1-probs)) / tot_sums)
-        result = dict(y=probs, yerr=prob_errs, x=mids)
-
-        return result
- 
     def make_dnl_info(self, im_arr):
-        min_counts = self.config.min_counts
+        min_counts = 150
         polyorder = 3
         sgw = 65
 
@@ -215,48 +180,6 @@ class adcTask():
 
         return dnl_info
         
-    def analyze_counts(self, amp_dict, w=32): ##
-        probs = {}
-
-        for amp, counts_dict in amp_dict.items():
-            data_dict = {}
-            x = np.array(sorted([edge for edge in counts_dict.keys()]))
-            y = np.array([counts_dict[edge] for edge in x])
-
-            mav = np.convolve(y, np.ones(w+1), 'valid') / (w+1)
-            mav = mav.round().astype(int)
-            mavx = x[w//2: -w//2] 
-
-            xmin = x.min()
-            xmax = x.max() + w
-            xmin -= xmin % w
-            windows = np.arange(xmin, xmax, w)
-
-            raw_probs = self.compute_probs(x, y, windows)
-            mav_probs = self.compute_probs(mavx, mav, windows)
-
-            mav_inter = np.in1d(mav_probs['x'], raw_probs['x'])
-            raw_inter = np.in1d(raw_probs['x'], mav_probs['x']) ## placeholder for better code
-
-            for d, inter in zip([mav_probs, raw_probs], [mav_inter, raw_inter]):
-                for key in ['y', 'yerr']:
-                    dvals = d[key]
-                    d[key] = np.array([row[inter] for row in dvals])
-
-                d['x'] = d['x'][inter]
-
-            mpy = mav_probs['y']
-            rpy = raw_probs['y']
-            mpyerr = mav_probs['yerr']
-            rpyerr = raw_probs['yerr']
-            data_dict['y'] = raw_probs['y'] / (2*mav_probs['y'])
-            data_dict['yerr'] = np.sqrt(((1/(2*mpy))**2)*(rpyerr**2)+\
-                                        ((rpy/(2*mpy**2))**2)*(mpyerr**2))
-            data_dict['x'] = raw_probs['x']
-            probs[amp] = data_dict
-
-        return probs
-
     def make_datasets(self):
         base_where = f"instrument='{self.config.instrument}'\n"
 
@@ -398,32 +321,8 @@ class adcTask():
 
         return result
 
-    def summarize_bit_data(self, dataset):
-        result = np.zeros((2, 8))
-
-        for iamp, (amp, data_dict) in enumerate(dataset.bit_data.items()):
-            probs = data_dict['y']
-            bit_bias = probs - 0.5
-            bit_vals = np.diag(np.power(2, np.arange(self.config.maxp)))
-            bias_effs = np.matmul(bit_vals, bit_bias)
-            #tot_bias_eff = np.sum(bias_effs, axis=0)
-
-            rms_bias_eff = np.sqrt(np.mean(bias_effs**2))
-            #mean_tot_bias_eff = np.mean(tot_bias_eff)
-
-            if iamp < 8:
-                result[0, iamp] = rms_bias_eff
-                #abs_array[0, iamp] = abs_bias_eff
-                #tot_array[0, iamp] = mean_tot_bias_eff
-            else:
-                result[1, 15-iamp] = rms_bias_eff
-                #abs_array[1, 15-iamp] = abs_bias_eff
-                #tot_array[1, 15-iamp] = mean_tot_bias_eff
-
-        return result #abs_array, tot_array
-
     def plot_dnl(self, run, dataset, fig, axs):
-        adcmax = self.config.adcmax
+        adcmax = 2**18
         detName = dataset.detName
         detType = dataset.detType
         summary_data = dataset.summary_data
@@ -469,72 +368,6 @@ class adcTask():
             fig.savefig(fname)
             print(f'Wrote {fname}')
 
-    def plot_bit_data(self, run, dataset, figs, axs):
-        p_fig, b_fig, t_fig = figs 
-        p_axs, b_axs, t_axs = axs 
-
-        detName = dataset.detName
-        detType = dataset.detType
-        bit_data = dataset.bit_data
-
-        diff_cutoff = 0.07
-        ylims = [(0.5-diff_cutoff, 0.5+diff_cutoff), (-0.15, 0.15), (-0.15, 0.15)]
-
-        for p_ax, b_ax, t_ax, (amp, data_dict) in zip(p_axs.ravel(), b_axs.ravel(), t_axs.ravel(), bit_data.items()):
-            x = data_dict['x']
-            #x = np.log(x)
-
-            for ax, ylim_tup in zip((p_ax, b_ax, t_ax), ylims):
-                ax.clear()
-                ax.grid(visible=True)
-                ax.set_title(f'{amp}', fontsize=16)
-                ax.set_ylim(ylim_tup)
-
-            bit_vals = np.diag(np.power(2, np.arange(self.config.maxp)))
-            bit_bias = data_dict['y'] - 0.5
-            prob_errs = data_dict['yerr']
-
-            bias_effs = np.matmul(bit_vals, bit_bias)
-            bias_eff_errs = np.matmul(bit_vals, prob_errs)
-            tot_bias_eff = np.sum(bias_effs, axis=0)
-            tot_bias_eff_err = np.sum(bias_eff_errs, axis=0) 
-
-            t_ax.errorbar(x, tot_bias_eff, yerr=tot_bias_eff_err, linestyle='None', marker='.', ms=14) 
-
-            for ibit, (probs, color, marker) in enumerate(zip(data_dict['y'], self.config.colors, 
-                                                              self.config.markers)):
-                max_diff = np.max(np.abs(probs-0.5))
-
-                p_ax.errorbar(x, probs, yerr=prob_errs[ibit], label=f'bit {ibit}', 
-                              linestyle='None', c=color, marker=marker)
-
-                b_ax.errorbar(x, bias_effs[ibit], yerr=bias_eff_errs[ibit], 
-                              label=f'bit {ibit}', linestyle='None', c=color, marker=marker)
-
-        for ax in np.array([p_axs[-1], b_axs[-1], t_axs[-1]]).flatten():
-            ax.set_xlabel('Signal (adu)', fontsize=18)
-        
-        for p_ax, b_ax, t_ax in zip(p_axs[:, 0], b_axs[:, 0], t_axs[:, 0]):
-            p_ax.set_ylabel('Bit Probability') 
-            b_ax.set_ylabel('Bit Bias Effect (ADU)') 
-            t_ax.set_ylabel('Total Bias Effect (ADU)') 
-
-        handles, labels = p_ax.get_legend_handles_labels()
-
-        titles = [f'{self.config.run} {detName} Bit Probablilities ({detType})',
-                  f'{self.config.run} {detName} Bit Bias Effect ({detType})',
-                  f'{self.config.run} {detName} Total Bias Effect ({detType})']
-
-        basenames = [f'{detName}_bit_probs_flux.png', f'{detName}_bit_bias_effect_flux.png',
-                     f'{detName}_total_bias_effect_flux.png']
-
-        for fig, title, basename in zip((p_fig, b_fig, t_fig), titles, basenames):
-            fig.legend(handles, labels, loc='upper right', fontsize=24)
-            fig.suptitle(title, fontsize=24) 
-            fname = os.path.join(self.config.plot_loc, basename)
-            fig.savefig(fname)
-            print(f'Wrote {fname}')
-
     def make_plots(self):
         for run in self.config.runs:
             cmap = 'Reds'
@@ -554,23 +387,15 @@ class adcTask():
                     dataset = pkl.load(f)
                     detName = dataset.detName
 
-                    if self.config.ds_type == 'dnl':
-                        self.plot_dnl(run, dataset, detfig, detaxs)
-                        det_summary = self.summarize_dnl_data(dataset)
-                    elif self.config.ds_type == 'bit':
-                        self.plot_bit_data(run, dataset, det_figs, det_axs)
-                        det_summary = self.summarize_bit_data(dataset)
+                    self.plot_dnl(run, dataset, detfig, detaxs)
+                    det_summary = self.summarize_dnl_data(dataset)
 
                     fp_data[detName] = det_summary
 
                     maxs[ifile] = np.max(det_summary)
 
-            if self.config.ds_type == 'dnl':
-                title = f'{run}_DNL std'
-                fname = f'{run}_fp_dnl_std.png'
-            elif self.config.ds_type == 'bit':
-                title = '{run}_RMS Bit Bias Effect'
-                fname = '{run}_fp_rms_bit_bias_effect.png'
+            title = f'{run}_DNL std'
+            fname = f'{run}_fp_dnl_std.png'
 
             mu = np.mean(maxs)
             sig = np.std(maxs)
@@ -604,11 +429,10 @@ class adcTask():
             self.make_plots()
 
     def get_det_dataset_file(self, detName, run):
-        pkl_name = f'{run}_{detName}_{self.config.ds_type}_dataset.pkl'
+        pkl_name = f'{run}_{detName}_dnl_dataset.pkl'
         pkl_file_name = os.path.join(self.config.dataset_loc, pkl_name)
         
         return pkl_file_name
-
 
     def check_dataset_exists(self, detName, run):
         pkl_file_name = self.get_det_dataset_file(detName, run)
@@ -619,7 +443,7 @@ class adcTask():
     def write_dataset(self, dataset, run):
         if dataset is not None:
             os.makedirs(self.config.dataset_loc, exist_ok=True)
-            pkl_name = f'{run}_{dataset.detName}_{self.config.ds_type}_dataset.pkl'
+            pkl_name = f'{run}_{dataset.detName}_dnl_dataset.pkl'
             pkl_file_name = os.path.join(self.config.dataset_loc, pkl_name)
             with open(pkl_file_name, 'wb') as pkl_file:
                 pkl.dump(dataset, pkl_file)
