@@ -437,15 +437,6 @@ class adcTask():
         for amp, ax in zip(amp_plot_order, axs.ravel()):
             ax.cla()
 
-            # This try except blocked can be removed 
-            # After deleting empty 7056D and 7057D datasets
-            try:
-                profile = summary_data[amp]['profile']
-                has_data = True
-            except KeyError:
-                print(f'No data for amp {amp}')
-                continue
-
             ylims = (0, maxy)
 
             if len(profile.xarr) > 3:
@@ -514,9 +505,6 @@ class adcTask():
                                                               self.config.markers)):
                 max_diff = np.max(np.abs(probs-0.5))
 
-                #if max_diff > diff_cutoff:
-                #    p_ax.set_ylim(0.5-max_diff-0.02, 0.5+max_diff+0.02)
-
                 p_ax.errorbar(x, probs, yerr=prob_errs[ibit], label=f'bit {ibit}', 
                               linestyle='None', c=color, marker=marker)
 
@@ -555,12 +543,6 @@ class adcTask():
             fp_fig, fp_axs = plot_fp()
             fp_data = {}
 
-            #p_fig, p_axs = plt.subplots(8, 2, figsize=(28, 20), sharex=True) #probabilities
-            #b_fig, b_axs = plt.subplots(8, 2, figsize=(28, 20), sharex=True) #bias effect
-            #t_fig, t_axs = plt.subplots(8, 2, figsize=(28, 20), sharex=True) #total effect
-            #det_figs = (p_fig, b_fig, t_fig)
-            #det_axs = (p_axs, b_axs, t_axs) 
-
             dataset_files = self.get_datasets(run)
 
             maxs = np.zeros(len(dataset_files))
@@ -592,7 +574,6 @@ class adcTask():
 
             mu = np.mean(maxs)
             sig = np.std(maxs)
-
 
             max10 = int(np.ceil(np.max(10*maxs[maxs<=mu+3*sig])))
             bounds = np.linspace(0, max10+1, 11)/10
