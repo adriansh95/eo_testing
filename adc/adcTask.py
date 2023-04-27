@@ -117,7 +117,7 @@ class adcTaskConfig():
         self.make_plots = kwargs.pop('make_plots', True)
         self.write_adcs = kwargs.pop('write_adcs', False)
         self.detectors = kwargs.pop('detectors', 'ALL_DETECTORS')
-        self.repo = kwargs.pop('repo', '/sdf/group/lsst/camera/IandT/repo_gen3/bot_data/butler.yaml')
+        self.repo = kwargs.pop('repo', '/sdf/group/rubin/repo/ir2/butler.yaml')
         self.amps = kwargs.pop('amps', all_amps)
         self.maxp = 5
         self.adcmax = 2**18
@@ -128,7 +128,7 @@ class adcTaskConfig():
         self.min_counts = 150
         self.plot_loc = os.path.join(self.write_to, f'plots/{ds_type}')
         self.instrument = kwargs.pop('instrument', 'LSSTCam')
-        self.observation_types = kwargs.pop('observation_types', ['dark'])
+        self.observation_type = kwargs.pop('observation_type', ['dark'])
 
 
 class adcTask():
@@ -258,17 +258,15 @@ class adcTask():
         return probs
 
     def make_datasets(self):
-        base_where = f"""
-        instrument='{self.config.instrument}'
-        """
+        base_where = f"instrument='{self.config.instrument}'\n"
 
-        obs_type_str = "', '".join(self.config.observation_types)
+        obs_type_str = "', '".join(self.config.observation_type)
 
         for run in self.config.runs:
             det_raft_pairs = self.get_det_raft_pairs(base_where)
             amps_list = self.config.amps
-            where = base_where + f"""and exposure.science_program='{run}'
-            and exposure.observation_type in ('{obs_type_str}')"""
+            where = base_where + f"and exposure.science_program='{run}'\n" \
+            f"and exposure.observation_type in ('{obs_type_str}')"
 
             for detector, detName in det_raft_pairs:
                 # Skip Corner rafts
@@ -291,8 +289,6 @@ class adcTask():
 
                 dataset = self.initialize_dataset(detName, detType, adcs)
 
-                #bit_data = self.analyze_counts(temp_counts)
-                #dataset = bit_dataset(detName, detType, bit_data) 
                 self.write_dataset(dataset, run)
 
     def initialize_dataset(self, detName, detType, adcs):
