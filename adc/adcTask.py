@@ -111,8 +111,8 @@ class adcTaskConfig():
         self.detectors = kwargs.pop('detectors', 'ALL_DETECTORS')
         self.repo = kwargs.pop('repo', '/sdf/group/rubin/repo/ir2/butler.yaml')
         self.amps = kwargs.pop('amps', all_amps)
-        self.dataset_loc = os.path.join(self.write_to, 'datasets/dnl')
-        self.plot_loc = os.path.join(self.write_to, f'plots/dnl')
+        self.dataset_loc = os.path.join(write_to, 'datasets/dnl')
+        self.plot_loc = os.path.join(write_to, f'plots/dnl')
         self.instrument = kwargs.pop('instrument', 'LSSTCam')
         self.observation_type = kwargs.pop('observation_type', ['dark'])
 
